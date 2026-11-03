@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เกม AR จับคู่ผลไม้เเสนสนุก - Fruit Matching AR</title>
+
+    <!-- Google Font: Sarabun -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;800&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- MediaPipe Hands & Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Sarabun', sans-serif;
+            background: linear-gradient(135deg, #a8ff78 0%, #78ffd6 100%);
+            touch-action: none;
+            user-select: none;
+        }
+        .canvas-container {
+            position: relative;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            border-radius: 2rem;
+            overflow: hidden;
+        }
+        /* Mirroring webcam feed */
+        #webcam {
+            transform: scaleX(-1);
+            display: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-2 md:p-4">
+
+    <!-- Header Section -->
+    <header class="text-center mb-3">
+        <h1 class="text-2xl md:text-4xl font-extrabold text-emerald-900 drop-shadow-md flex items-center justify-center gap-2">
+            <span>🍎</span> เกม AR จับคู่ผลไม้เเสนสนุก <span>🍌</span>
+        </h1>
+        <p class="text-sm md:text-base text-emerald-800 font-semibold mt-1">
+            ใช้นิ้วลากเชื่อมโยงรูปภาพกับคำศัพท์ และ <span class="bg-amber-300 px-2 py-0.5 rounded-full text-amber-900 shadow">🖐️ กางฝ่ามือ</span> บนปุ่มยืนยัน!
+        </p>
+    </header>
+
+    <!-- Main Game Frame -->
+    <main class="w-full max-w-6xl flex flex-col items-center">
+        <!-- Hidden Video for MediaPipe -->
+        <video id="webcam" playsinline></video>
+
+        <!-- Canvas Frame Container -->
+        <div class="canvas-container w-full aspect-[16/9] max-h-[80vh] bg-white relative border-4 border-emerald-400">
+            <canvas id="gameCanvas" class="w-full h-full block cursor-pointer"></canvas>
+
+            <!-- Loading Overlay -->
+            <div id="loadingOverlay" class="absolute inset-0 bg-emerald-900/80 backdrop-blur-md flex flex-col items-center justify-center text-white z-20">
+                <div class="animate-spin rounded-full h-16 w-16 border-4 border-amber-400 border-t-transparent mb-4"></div>
+                <h2 class="text-2xl font-bold mb-2">กำลังเตรียมความพร้อมของกล้อง AR...</h2>
+                <p class="text-emerald-200 text-sm">กรุณากด "อนุญาต" เพื่อใช้งานกล้องถ่ายภาพ</p>
+            </div>
+
+            <!-- Start / Calibration Screen -->
+            <div id="startOverlay" class="hidden absolute inset-0 bg-emerald-800/90 backdrop-blur-sm flex flex-col items-center justify-center text-white p-6 z-20 text-center">
+                <div class="text-6xl mb-4">🖐️🎯</div>
+                <h2 class="text-3xl font-extrabold mb-3">ยินดีต้อนรับสู่อาณาจักรผลไม้!</h2>
+                <div class="bg-white/10 p-4 rounded-xl max-w-md text-left text-sm md:text-base space-y-2 mb-6 border border-white/20">
+                    <p class="flex items-center gap-2">👈 <strong>ฝั่งซ้าย:</strong> รูปผลไม้น่ารักๆ 10 ชนิด</p>
+                    <p class="flex items-center gap-2">👉 <strong>ฝั่งขวา:</strong> ชื่อผลไม้ภาษาอังกฤษ</p>
+                    <p class="flex items-center gap-2">🤏 <strong>หนีบนิ้ว/จิ้ม:</strong> เพื่อลากเส้นจับคู่</p>
+                    <p class="flex items-center gap-2">🖐️ <strong>กางฝ่ามือ:</strong> ค้างบนปุ่มยืนยัน (มีทั้งซ้าย-ขวา)</p>
+                </div>
+                <button id="btnStartGame" class="bg-amber-400 hover:bg-amber-300 text-amber-950 font-extrabold text-xl px-8 py-3 rounded-full shadow-lg transform transition active:scale-95">
+                    🚀 เริ่มเล่นเกมเลย!
+                </button>
+            </div>
+        </div>
+
+        <!-- Controls Toolbar -->
+        <div class="w-full flex justify-between items-center mt-3 px-2 text-sm md:text-base">
+            <div class="flex items-center gap-2">
+                <span id="arStatus" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span> กำลังเปิดกล้อง...
+                </span>
+                <button id="btnToggleMouse" class="px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-lg shadow border border-slate-200 text-xs md:text-sm">
+                    🖱️ ใช้เมาส์แทน AR
+                </button>
+            </div>
+
+            <button id="btnReset" class="px-4 py-1.5 bg-rose-500 hover:bg-rose-600 text-white font-extrabold rounded-lg shadow-md transition active:scale-95 text-xs md:text-sm">
+                🔄 เริ่มเล่นใหม่
+            </button>
+        </div>
+    </main>
+
+    <script>
+        // --- sound Effects Synthesizer (Web Audio API) ---
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+            }
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+            playSelect() {
+                this.init();
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(440, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            }
+            playConnect() {
+                this.init();
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(523.25, this.ctx.currentTime); // C5
+                osc.frequency.setValueAtTime(659.25, this.ctx.currentTime + 0.08); // E5
+                osc.frequency.setValueAtTime(783.99, this.ctx.currentTime + 0.16); // G5
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.25);
+            }
+            playSuccess() {
+                this.init();
+                if (!this.ctx) return;
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, index) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime + index * 0.1);
+                    gain.gain.setValueAtTime(0.3, this.ctx.currentTime + index * 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + index * 0.1 + 0.2);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(this.ctx.currentTime + index * 0.1);
+                    osc.stop(this.ctx.currentTime + index * 0.1 + 0.2);
+                });
+            }
+            playError() {
+                this.init();
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(220, this.ctx.currentTime);
+                osc.frequency.setValueAtTime(180, this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.3);
+            }
+        }
+        const sfx = new SoundFX();
+
+        // --- 10 Fruit Definitions with SVG vector drawings ---
+        const FRUITS_DATA = [
+            { id: 'apple', name: 'Apple', thai: 'แอปเปิ้ล', color: '#ff4d4d', draw: drawApple },
+            { id: 'banana', name: 'Banana', thai: 'กล้วย', color: '#ffe135', draw: drawBanana },
+            { id: 'watermelon', name: 'Watermelon', thai: 'แตงโม', color: '#ff3b5c', draw: drawWatermelon },
+            { id: 'strawberry', name: 'Strawberry', thai: 'สตรอว์เบอร์รี', color: '#ff2e63', draw: drawStrawberry },
+            { id: 'orange', name: 'Orange', thai: 'ส้ม', color: '#ff9234', draw: drawOrange },
+            { id: 'grape', name: 'Grape', thai: 'องุ่น', color: '#9d4edf', draw: drawGrape },
+            { id: 'pineapple', name: 'Pineapple', thai: 'สับปะรด', color: '#f7b731', draw: drawPineapple },
+            { id: 'mango', name: 'Mango', thai: 'มะม่วง', color: '#fffa65', draw: drawMango },
+            { id: 'coconut', name: 'Coconut', thai: 'มะพร้าว', color: '#a5b1c2', draw: drawCoconut },
+            { id: 'cherry', name: 'Cherry', thai: 'เชอร์รี่', color: '#eb3b5a', draw: drawCherry }
+        ];
+
+        function drawApple(ctx, x, y, size) {
+            const r = size * 0.4;
+            // Body
+            ctx.fillStyle = '#ff3344';
+            ctx.beginPath();
+            ctx.arc(x - r*0.3, y, r, 0, Math.PI * 2);
+            ctx.arc(x + r*0.3, y, r, 0, Math.PI * 2);
+            ctx.fill();
+            // Stem
+            ctx.strokeStyle = '#5d4037';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(x, y - r * 0.8);
+            ctx.quadraticCurveTo(x + 5, y - r * 1.3, x + 8, y - r * 1.4);
+            ctx.stroke();
+            // Leaf
+            ctx.fillStyle = '#4caf50';
+            ctx.beginPath();
+            ctx.ellipse(x + 8, y - r * 1.2, 8, 4, Math.PI / 4, 0, Math.PI * 2);
+            ctx.fill();
+            // Cute Eyes
+            drawCuteFace(ctx, x, y, size);
+        }
+
+        function drawBanana(ctx, x, y, size) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.fillStyle = '#ffeb3b';
+            ctx.beginPath();
+            ctx.arc(0, -10, size * 0.45, 0.2 * Math.PI, 0.9 * Math.PI, false);
+            ctx.quadraticCurveTo(0, size * 0.3, -size * 0.35, -10);
+            ctx.fill();
+            // Ends
+            ctx.fillStyle = '#8d6e63';
+            ctx.fillRect(-size * 0.35 - 3, -13, 6, 6);
+            ctx.restore();
+            drawCuteFace(ctx, x - 5, y + 5, size * 0.8);
+        }
+
+        function drawWatermelon(ctx, x, y, size) {
+            const r = size * 0.42;
+            // Rind
+            ctx.fillStyle = '#2e7d32';
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI);
+            ctx.fill();
+            // White layer
+            ctx.fillStyle = '#a5d6a7';
+            ctx.beginPath();
+            ctx.arc(x, y, r * 0.88, 0, Math.PI);
+            ctx.fill();
+            // Flesh
+            ctx.fillStyle = '#ff5252';
+            ctx.beginPath();
+            ctx.arc(x, y, r * 0.78, 0, Math.PI);
+            ctx.fill();
+            // Seeds
+            ctx.fillStyle = '#212121';
+            [-12, 0, 12].forEach(dx => {
+                ctx.beginPath();
+                ctx.arc(x + dx, y + 12, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            drawCuteFace(ctx, x, y + 2, size * 0.7);
+        }
+
+        function drawStrawberry(ctx, x, y, size) {
+            const r = size * 0.4;
+            ctx.fillStyle = '#ff1744';
+            ctx.beginPath();
+            ctx.moveTo(x, y + r);
+            ctx.bezierCurveTo(x - r * 1.3, y - r * 0.2, x - r, y - r, x, y - r * 0.6);
+            ctx.bezierCurveTo(x + r, y - r, x + r * 1.3, y - r * 0.2, x, y + r);
+            ctx.fill();
+            // Leaf
+            ctx.fillStyle = '#2e7d32';
+            ctx.beginPath();
+            ctx.ellipse(x, y - r * 0.6, 12, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Seeds
+            ctx.fillStyle = '#ffeb3b';
+            [-8, 8].forEach(dx => {
+                ctx.fillRect(x + dx, y, 2, 3);
+            });
+            drawCuteFace(ctx, x, y + 2, size * 0.7);
+        }
+
+        function drawOrange(ctx, x, y, size) {
+            const r = size * 0.4;
+            ctx.fillStyle = '#ff9800';
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+            // Leaf
+            ctx.fillStyle = '#4caf50';
+            ctx.beginPath();
+            ctx.ellipse(x + 5, y - r, 8, 4, -Math.PI / 6, 0, Math.PI * 2);
+            ctx.fill();
+            drawCuteFace(ctx, x, y, size);
+        }
+
+        function drawGrape(ctx, x, y, size) {
+            const r = 9;
+            ctx.fillStyle = '#ab47bc';
+            const offsets = [
+                [0, -12], [-10, -5], [10, -5],
+                [-6, 8], [6, 8], [0, 18]
+            ];
+            offsets.forEach(([dx, dy]) => {
+                ctx.beginPath();
+                ctx.arc(x + dx, y + dy, r, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            // Leaf
+            ctx.fillStyle = '#388e3c';
+            ctx.fillRect(x - 2, y - 22, 4, 8);
+            drawCuteFace(ctx, x, y, size * 0.7);
+        }
+
+        function drawPineapple(ctx, x, y, size) {
+            // Crown
+            ctx.fillStyle = '#2e7d32';
+            ctx.beginPath();
+            ctx.moveTo(x - 12, y - 10);
+            ctx.lineTo(x - 15, y - 28);
+            ctx.lineTo(x - 5, y - 18);
+            ctx.lineTo(x, y - 30);
+            ctx.lineTo(x + 5, y - 18);
+            ctx.lineTo(x + 15, y - 28);
+            ctx.lineTo(x + 12, y - 10);
+            ctx.fill();
+            // Body
+            ctx.fillStyle = '#fbc02d';
+            ctx.beginPath();
+            ctx.ellipse(x, y + 5, 18, 22, 0, 0, Math.PI * 2);
+            ctx.fill();
+            drawCuteFace(ctx, x, y + 5, size * 0.7);
+        }
+
+        function drawMango(ctx, x, y, size) {
+            ctx.fillStyle = '#fdd835';
+            ctx.beginPath();
+            ctx.moveTo(x, y - 20);
+            ctx.bezierCurveTo(x + 25, y - 15, x + 25, y + 20, x, y + 22);
+            ctx.bezierCurveTo(x - 20, y + 20, x - 20, y - 10, x, y - 20);
+            ctx.fill();
+            drawCuteFace(ctx, x + 2, y + 2, size * 0.7);
+        }
+
+        function drawCoconut(ctx, x, y, size) {
+            const r = size * 0.38;
+            ctx.fillStyle = '#6d4c41';
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+            // Inner shell detail
+            ctx.fillStyle = '#4e342e';
+            [-8, 0, 8].forEach(dx => {
+                ctx.beginPath();
+                ctx.arc(x + dx, y - 12, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            drawCuteFace(ctx, x, y + 4, size * 0.7);
+        }
+
+        function drawCherry(ctx, x, y, size) {
+            // Stems
+            ctx.strokeStyle = '#388e3c';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(x - 12, y + 5);
+            ctx.quadraticCurveTo(x, y - 22, x, y - 20);
+            ctx.moveTo(x + 12, y + 5);
+            ctx.quadraticCurveTo(x, y - 22, x, y - 20);
+            ctx.stroke();
+            // Cherries
+            ctx.fillStyle = '#d32f2f';
+            ctx.beginPath();
+            ctx.arc(x - 12, y + 8, 11, 0, Math.PI * 2);
+            ctx.arc(x + 12, y + 8, 11, 0, Math.PI * 2);
+            ctx.fill();
+            drawCuteFace(ctx, x - 12, y + 8, size * 0.5);
+            drawCuteFace(ctx, x + 12, y + 8, size * 0.5);
+        }
+
+        function drawCuteFace(ctx, x, y, size) {
+            ctx.fillStyle = '#212121';
+            // Eyes
+            ctx.beginPath();
+            ctx.arc(x - 6, y - 2, 2.5, 0, Math.PI * 2);
+            ctx.arc(x + 6, y - 2, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            // Eye shine
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(x - 7, y - 3, 1, 0, Math.PI * 2);
+            ctx.arc(x + 5, y - 3, 1, 0, Math.PI * 2);
+            ctx.fill();
+            // Smile
+            ctx.strokeStyle = '#212121';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.arc(x, y + 2, 4, 0.1 * Math.PI, 0.9 * Math.PI, false);
+            ctx.stroke();
+            // Cheeks
+            ctx.fillStyle = 'rgba(255, 105, 180, 0.5)';
+            ctx.beginPath();
+            ctx.arc(x - 9, y + 2, 2.5, 0, Math.PI * 2);
+            ctx.arc(x + 9, y + 2, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        class FruitARGame {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                
+                // Audio & Camera
+                this.useMouse = false;
+                this.isGameActive = false;
+                
+                // Cursor & Gestures
+                this.cursor = { x: -100, y: -100, isPinching: false, isOpenPalm: false, rawX: -100, rawY: -100 };
+                this.smoothedCursor = { x: -100, y: -100 };
+                
+                // Left & Right Nodes
+                this.leftNodes = [];   // Fruit Images
+                this.rightNodes = [];  // English Words
+                
+                // User Connections: Map of leftNodeIndex -> rightNodeIndex
+                this.userConnections = {};
+                this.activeDragStart = null; // node index being dragged from
+                
+                // Confirm Buttons State
+                this.leftConfirmProgress = 0;
+                this.rightConfirmProgress = 0;
+                this.CONFIRM_HOLD_TIME = 35; // frames (~0.6s)
+
+                // Layout
+                this.scale = 1;
+                this.width = 1280;
+                this.height = 720;
+                
+                // Target Lock Visuals
+                this.lockedTarget = null;
+                
+                this.initCanvasSize();
+                this.setupEventListeners();
+            }
+
+            initCanvasSize() {
+                const rect = this.canvas.parentElement.getBoundingClientRect();
+                this.canvas.width = rect.width;
+                this.canvas.height = rect.height;
+                this.width = rect.width;
+                this.height = rect.height;
+                this.scale = this.height / 720;
+            }
+
+            setupGameData() {
+                this.userConnections = {};
+                this.activeDragStart = null;
+                this.leftConfirmProgress = 0;
+                this.rightConfirmProgress = 0;
+
+                // Clone & Shuffle Data
+                const shuffledFruits = [...FRUITS_DATA].sort(() => Math.random() - 0.5);
+                const shuffledWords = [...shuffledFruits].sort(() => Math.random() - 0.5);
+
+                const totalItems = 10;
+                const topMargin = 80 * this.scale;
+                const bottomMargin = 90 * this.scale;
+                const availableHeight = this.height - topMargin - bottomMargin;
+                const rowSpacing = availableHeight / totalItems;
+
+                const leftX = this.width * 0.22;
+                const rightX = this.width * 0.78;
+
+                // Create Left Nodes (Images)
+                this.leftNodes = shuffledFruits.map((fruit, idx) => ({
+                    index: idx,
+                    type: 'fruit',
+                    data: fruit,
+                    x: leftX,
+                    y: topMargin + idx * rowSpacing + rowSpacing / 2,
+                    radius: 28 * this.scale,
+                    connectedTo: null
+                }));
+
+                // Create Right Nodes (English Words)
+                this.rightNodes = shuffledWords.map((fruit, idx) => ({
+                    index: idx,
+                    type: 'word',
+                    data: fruit,
+                    x: rightX,
+                    y: topMargin + idx * rowSpacing + rowSpacing / 2,
+                    width: 170 * this.scale,
+                    height: 44 * this.scale,
+                    connectedFrom: null
+                }));
+
+                // Define Confirm Buttons (Left & Right)
+                const btnWidth = 130 * this.scale;
+                const btnHeight = 55 * this.scale;
+                const btnY = this.height - 65 * this.scale;
+
+                this.leftConfirmBtn = {
+                    x: this.width * 0.15 - btnWidth / 2,
+                    y: btnY,
+                    width: btnWidth,
+                    height: btnHeight,
+                    side: 'left'
+                };
+
+                this.rightConfirmBtn = {
+                    x: this.width * 0.85 - btnWidth / 2,
+                    y: btnY,
+                    width: btnWidth,
+                    height: btnHeight,
+                    side: 'right'
+                };
+            }
+
+            setupEventListeners() {
+                window.addEventListener('resize', () => {
+                    this.initCanvasSize();
+                    if (this.isGameActive) this.setupGameData();
+                });
+
+                // Touch & Mouse Fallbacks
+                const updatePointer = (e, isPinching) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.cursor.x = e.clientX - rect.left;
+                    this.cursor.y = e.clientY - rect.top;
+                    this.cursor.isPinching = isPinching;
+                    this.cursor.isOpenPalm = false;
+                };
+
+                this.canvas.addEventListener('mousedown', (e) => {
+                    if (this.useMouse) {
+                        sfx.init();
+                        updatePointer(e, true);
+                        this.handlePointerStart();
+                    }
+                });
+
+                this.canvas.addEventListener('mousemove', (e) => {
+                    if (this.useMouse) {
+                        updatePointer(e, this.cursor.isPinching);
+                    }
+                });
+
+                this.canvas.addEventListener('mouseup', (e) => {
+                    if (this.useMouse) {
+                        updatePointer(e, false);
+                        this.handlePointerEnd();
+                    }
+                });
+
+                // Double click with mouse toggles open palm for testing
+                this.canvas.addEventListener('contextmenu', (e) => {
+                    if (this.useMouse) {
+                        e.preventDefault();
+                        this.cursor.isOpenPalm = !this.cursor.isOpenPalm;
+                    }
+                });
+
+                document.getElementById('btnStartGame').addEventListener('click', () => {
+                    sfx.init();
+                    document.getElementById('startOverlay').classList.add('hidden');
+                    this.isGameActive = true;
+                    this.setupGameData();
+                });
+
+                document.getElementById('btnReset').addEventListener('click', () => {
+                    sfx.init();
+                    this.setupGameData();
+                });
+
+                document.getElementById('btnToggleMouse').addEventListener('click', (e) => {
+                    this.useMouse = !this.useMouse;
+                    const status = document.getElementById('arStatus');
+                    if (this.useMouse) {
+                        status.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-800 border border-slate-300";
+                        status.innerHTML = "🖱️ ใช้โหมดเมาส์";
+                        e.target.innerText = "📷 สลับใช้ AR กล้อง";
+                    } else {
+                        status.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300";
+                        status.innerHTML = "<span class='w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse'></span> กล้อง AR ทำงานแล้ว";
+                        e.target.innerText = "🖱️ ใช้เมาส์แทน AR";
+                    }
+                });
+            }
+
+            updateHandData(landmarks) {
+                if (this.useMouse || !this.isGameActive) return;
+
+                // Index Finger Tip (Landmark 8)
+                const indexTip = landmarks[8];
+                // Thumb Tip (Landmark 4)
+                const thumbTip = landmarks[4];
+                // Wrist (Landmark 0)
+                const wrist = landmarks[0];
+
+                // Convert normalized coordinates (0..1) to Canvas pixels (Mirrored horizontally)
+                const rawX = (1 - indexTip.x) * this.width;
+                const rawY = indexTip.y * this.height;
+
+                // Smooth filtering (Exponential moving average) for rock-solid stability
+                const lerpFactor = 0.35;
+                if (this.smoothedCursor.x === -100) {
+                    this.smoothedCursor.x = rawX;
+                    this.smoothedCursor.y = rawY;
+                } else {
+                    this.smoothedCursor.x += (rawX - this.smoothedCursor.x) * lerpFactor;
+                    this.smoothedCursor.y += (rawY - this.smoothedCursor.y) * lerpFactor;
+                }
+
+                this.cursor.x = this.smoothedCursor.x;
+                this.cursor.y = this.smoothedCursor.y;
+
+                // 1. Check Pinch Gesture (Index & Thumb Distance)
+                const pinchDist = Math.hypot(
+                    (indexTip.x - thumbTip.x) * this.width,
+                    (indexTip.y - thumbTip.y) * this.height
+                );
+                const isPinchingNow = pinchDist < 45 * this.scale;
+
+                // Trigger Start/End drag transitions
+                if (isPinchingNow && !this.cursor.isPinching) {
+                    this.cursor.isPinching = true;
+                    this.handlePointerStart();
+                } else if (!isPinchingNow && this.cursor.isPinching) {
+                    this.cursor.isPinching = false;
+                    this.handlePointerEnd();
+                }
+
+                // 2. Check Open Palm Gesture (All fingertips extended far from wrist)
+                const fingerTips = [8, 12, 16, 20];
+                let extendedCount = 0;
+                fingerTips.forEach(tipIdx => {
+                    const distToWrist = Math.hypot(
+                        landmarks[tipIdx].x - wrist.x,
+                        landmarks[tipIdx].y - wrist.y
+                    );
+                    if (distToWrist > 0.28) extendedCount++;
+                });
+
+                this.cursor.isOpenPalm = (extendedCount >= 3) && !this.cursor.isPinching;
+            }
+
+            handlePointerStart() {
+                // Find nearest Left Fruit Node (Magnet Snap)
+                let closestLeft = null;
+                let minDist = 60 * this.scale;
+
+                this.leftNodes.forEach(node => {
+                    const d = Math.hypot(this.cursor.x - node.x, this.cursor.y - node.y);
+                    if (d < minDist) {
+                        minDist = d;
+                        closestLeft = node;
+                    }
+                });
+
+                if (closestLeft) {
+                    this.activeDragStart = closestLeft.index;
+                    sfx.playSelect();
+                }
+            }
+
+            handlePointerEnd() {
+                if (this.activeDragStart !== null) {
+                    // Find nearest Right Word Node upon release
+                    let closestRight = null;
+                    let minDist = 70 * this.scale;
+
+                    this.rightNodes.forEach(node => {
+                        const d = Math.hypot(this.cursor.x - node.x, this.cursor.y - node.y);
+                        if (d < minDist) {
+                            minDist = d;
+                            closestRight = node;
+                        }
+                    });
+
+                    if (closestRight) {
+                        // Remove previous connection to this right node if any
+                        Object.keys(this.userConnections).forEach(leftIdx => {
+                            if (this.userConnections[leftIdx] === closestRight.index) {
+                                delete this.userConnections[leftIdx];
+                            }
+                        });
+
+                        // Set new connection
+                        this.userConnections[this.activeDragStart] = closestRight.index;
+                        sfx.playConnect();
+                    }
+
+                    this.activeDragStart = null;
+                }
+            }
+
+            render() {
+                this.ctx.clearRect(0, 0, this.width, this.height);
+
+                if (!this.isGameActive) return;
+
+                // Draw Playful Background
+                this.drawBackground();
+
+                // Draw Existing Connections
+                this.drawConnections();
+
+                // Draw Active Drag Line
+                if (this.activeDragStart !== null) {
+                    const startNode = this.leftNodes[this.activeDragStart];
+                    this.ctx.strokeStyle = '#3b82f6';
+                    this.ctx.lineWidth = 6 * this.scale;
+                    this.ctx.setLineDash([8, 8]);
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(startNode.x, startNode.y);
+                    this.ctx.lineTo(this.cursor.x, this.cursor.y);
+                    this.ctx.stroke();
+                    this.ctx.setLineDash([]);
+                }
+
+                // Draw Left Column Nodes (Fruits)
+                this.leftNodes.forEach(node => this.drawLeftNode(node));
+
+                // Draw Right Column Nodes (English Words)
+                this.rightNodes.forEach(node => this.drawRightNode(node));
+
+                // Draw Confirmation Buttons (Left & Right Hands)
+                this.updateAndDrawConfirmButtons();
+
+                // Draw AR Hand Cursor & Magnet Target Lock Highlights
+                this.drawCursor();
+            }
+
+            drawBackground() {
+                // Soft pastel grid background
+                this.ctx.fillStyle = '#f8fafc';
+                this.ctx.fillRect(0, 0, this.width, this.height);
+
+                // Top Header Bar Inside Canvas
+                this.ctx.fillStyle = '#10b981';
+                this.ctx.fillRect(0, 0, this.width, 50 * this.scale);
+
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.font = `bold ${Math.round(22 * this.scale)}px Sarabun`;
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillText('🍎 ลากเส้นจับคู่รูปภาพกับคำศัพท์ภาษาอังกฤษ 10 ข้อ 🍇', this.width / 2, 25 * this.scale);
+            }
+
+            drawLeftNode(node) {
+                const isSelected = this.activeDragStart === node.index;
+                const isConnected = this.userConnections[node.index] !== undefined;
+
+                this.ctx.save();
+                this.ctx.translate(node.x, node.y);
+
+                // Magnet target highlight
+                const distToCursor = Math.hypot(this.cursor.x - node.x, this.cursor.y - node.y);
+                if (distToCursor < 50 * this.scale) {
+                    this.ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
+                    this.ctx.beginPath();
+                    this.ctx.arc(0, 0, node.radius + 12 * this.scale, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+
+                // Node Outer Circle
+                this.ctx.fillStyle = isSelected ? '#dbeafe' : (isConnected ? '#e0e7ff' : '#ffffff');
+                this.ctx.strokeStyle = isSelected ? '#3b82f6' : (isConnected ? '#6366f1' : '#cbd5e1');
+                this.ctx.lineWidth = 3 * this.scale;
+
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, node.radius, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
+
+                // Draw Fruit Vector
+                node.data.draw(this.ctx, 0, 0, node.radius * 1.5);
+
+                // Draw Connection Pin
+                this.ctx.fillStyle = isConnected ? '#6366f1' : '#94a3b8';
+                this.ctx.beginPath();
+                this.ctx.arc(node.radius + 10 * this.scale, 0, 6 * this.scale, 0, Math.PI * 2);
+                this.ctx.fill();
+
+                this.ctx.restore();
+            }
+
+            drawRightNode(node) {
+                this.ctx.save();
+                this.ctx.translate(node.x, node.y);
+
+                const isConnected = Object.values(this.userConnections).includes(node.index);
+                const distToCursor = Math.hypot(this.cursor.x - node.x, this.cursor.y - node.y);
+
+                // Magnet target highlight
+                if (distToCursor < 60 * this.scale) {
+                    this.ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
+                    this.ctx.beginPath();
+                    this.ctx.roundRect(-node.width/2 - 8, -node.height/2 - 4, node.width + 16, node.height + 8, 16);
+                    this.ctx.fill();
+                }
+
+                // Card background
+                this.ctx.fillStyle = isConnected ? '#d1fae5' : '#ffffff';
+                this.ctx.strokeStyle = isConnected ? '#10b981' : '#cbd5e1';
+                this.ctx.lineWidth = 3 * this.scale;
+
+                this.ctx.beginPath();
+                this.ctx.roundRect(-node.width / 2, -node.height / 2, node.width, node.height, 12 * this.scale);
+                this.ctx.fill();
+                this.ctx.stroke();
+
+                // English Word Text
+                this.ctx.fillStyle = isConnected ? '#065f46' : '#1e293b';
+                this.ctx.font = `bold ${Math.round(20 * this.scale)}px Sarabun`;
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillText(node.data.name, 0, 0);
+
+                // Draw Connection Pin
+                this.ctx.fillStyle = isConnected ? '#10b981' : '#94a3b8';
+                this.ctx.beginPath();
+                this.ctx.arc(-node.width / 2 - 10 * this.scale, 0, 6 * this.scale, 0, Math.PI * 2);
+                this.ctx.fill();
+
+                this.ctx.restore();
+            }
+
+            drawConnections() {
+                Object.entries(this.userConnections).forEach(([leftIdx, rightIdx]) => {
+                    const leftNode = this.leftNodes[leftIdx];
+                    const rightNode = this.rightNodes[rightIdx];
+
+                    this.ctx.strokeStyle = '#10b981';
+                    this.ctx.lineWidth = 5 * this.scale;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(leftNode.x + leftNode.radius + 10 * this.scale, leftNode.y);
+                    
+                    // Smooth Cubic Bezier Line
+                    const cp1x = leftNode.x + (rightNode.x - leftNode.x) / 2;
+                    const cp2x = leftNode.x + (rightNode.x - leftNode.x) / 2;
+                    this.ctx.bezierCurveTo(cp1x, leftNode.y, cp2x, rightNode.y, rightNode.x - rightNode.width / 2 - 10 * this.scale, rightNode.y);
+                    this.ctx.stroke();
+                });
+            }
+
+            updateAndDrawConfirmButtons() {
+                const buttons = [this.leftConfirmBtn, this.rightConfirmBtn];
+
+                buttons.forEach(btn => {
+                    const isHovered = (
+                        this.cursor.x >= btn.x &&
+                        this.cursor.x <= btn.x + btn.width &&
+                        this.cursor.y >= btn.y &&
+                        this.cursor.y <= btn.y + btn.height
+                    );
+
+                    let progressVar = btn.side === 'left' ? 'leftConfirmProgress' : 'rightConfirmProgress';
+
+                    // If user hovers over confirm button with OPEN PALM (or holding mouse)
+                    if (isHovered && (this.cursor.isOpenPalm || (this.useMouse && this.cursor.isPinching))) {
+                        this[progressVar]++;
+                        if (this[progressVar] >= this.CONFIRM_HOLD_TIME) {
+                            this[progressVar] = 0;
+                            this.checkAnswers();
+                        }
+                    } else {
+                        this[progressVar] = Math.max(0, this[progressVar] - 2);
+                    }
+
+                    const progressRatio = this[progressVar] / this.CONFIRM_HOLD_TIME;
+
+                    // Draw Button
+                    this.ctx.save();
+                    this.ctx.translate(btn.x, btn.y);
+
+                    // Glowing shadow
+                    this.ctx.shadowColor = 'rgba(245, 158, 11, 0.4)';
+                    this.ctx.shadowBlur = 10;
+
+                    this.ctx.fillStyle = '#f59e0b';
+                    this.ctx.beginPath();
+                    this.ctx.roundRect(0, 0, btn.width, btn.height, 16 * this.scale);
+                    this.ctx.fill();
+
+                    // Progress Fill Animation
+                    if (progressRatio > 0) {
+                        this.ctx.fillStyle = '#10b981';
+                        this.ctx.beginPath();
+                        this.ctx.roundRect(0, 0, btn.width * progressRatio, btn.height, 16 * this.scale);
+                        this.ctx.fill();
+                    }
+
+                    // Border
+                    this.ctx.strokeStyle = '#ffffff';
+                    this.ctx.lineWidth = 3 * this.scale;
+                    this.ctx.stroke();
+
+                    // Text & Icon
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = `bold ${Math.round(16 * this.scale)}px Sarabun`;
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'middle';
+                    this.ctx.fillText('🖐️ ยืนยันคำตอบ', btn.width / 2, btn.height / 2);
+
+                    this.ctx.restore();
+                });
+            }
+
+            drawCursor() {
+                if (this.cursor.x < 0) return;
+
+                this.ctx.save();
+                this.ctx.translate(this.cursor.x, this.cursor.y);
+
+                if (this.cursor.isOpenPalm) {
+                    // Open Palm Visual Indicator
+                    this.ctx.fillStyle = 'rgba(16, 185, 129, 0.3)';
+                    this.ctx.beginPath();
+                    this.ctx.arc(0, 0, 30 * this.scale, 0, Math.PI * 2);
+                    this.ctx.fill();
+
+                    this.ctx.fillStyle = '#10b981';
+                    this.ctx.font = `${Math.round(28 * this.scale)}px sans-serif`;
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'middle';
+                    this.ctx.fillText('🖐️', 0, 0);
+                } else {
+                    // Pinch / Pointer Ring
+                    this.ctx.fillStyle = this.cursor.isPinching ? '#ef4444' : '#3b82f6';
+                    this.ctx.beginPath();
+                    this.ctx.arc(0, 0, (this.cursor.isPinching ? 12 : 8) * this.scale, 0, Math.PI * 2);
+                    this.ctx.fill();
+
+                    this.ctx.strokeStyle = '#ffffff';
+                    this.ctx.lineWidth = 3 * this.scale;
+                    this.ctx.stroke();
+                }
+
+                this.ctx.restore();
+            }
+
+            checkAnswers() {
+                let correctCount = 0;
+                const total = this.leftNodes.length;
+
+                this.leftNodes.forEach(leftNode => {
+                    const connectedRightIdx = this.userConnections[leftNode.index];
+                    if (connectedRightIdx !== undefined) {
+                        const rightNode = this.rightNodes[connectedRightIdx];
+                        if (leftNode.data.id === rightNode.data.id) {
+                            correctCount++;
+                        }
+                    }
+                });
+
+                if (correctCount === total) {
+                    sfx.playSuccess();
+                    confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+
+                    alert(`🎉 เก่งมากเลยจับคู่ถูกต้องทั้งหมด 10/10 ข้อ! ⭐⭐⭐`);
+                } else {
+                    sfx.playError();
+                    alert(`👍 คุณจับคู่ถูกต้อง ${correctCount} จาก 10 ข้อ ลองปรับแก้แล้วยืนยันอีกครั้งนะ!`);
+                }
+            }
+        }
+
+        const game = new FruitARGame();
+
+        function renderLoop() {
+            game.render();
+            requestAnimationFrame(renderLoop);
+        }
+
+        // Initialize MediaPipe Hands
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.65,
+            minTrackingConfidence: 0.65
+        });
+
+        hands.onResults((results) => {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+            if (document.getElementById('startOverlay').classList.contains('hidden') === false) {
+                // Keep overlay until user clicks start
+            }
+
+            const status = document.getElementById('arStatus');
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                game.updateHandData(results.multiHandLandmarks[0]);
+                if (!game.useMouse) {
+                    status.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300";
+                    status.innerHTML = "<span class='w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse'></span> ตรวจพบมือแล้ว";
+                }
+            } else {
+                if (!game.useMouse) {
+                    status.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300";
+                    status.innerHTML = "<span class='w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse'></span> ยกมือขึ้นมาหน้ากล้อง...";
+                }
+            }
+        });
+
+        // Start Webcam Video Stream
+        const videoElement = document.getElementById('webcam');
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 1280,
+            height: 720
+        });
+
+        window.onload = () => {
+            camera.start().catch(err => {
+                console.warn("Camera failed or denied:", err);
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                document.getElementById('startOverlay').classList.remove('hidden');
+                // Auto switch to mouse mode if camera fails
+                document.getElementById('btnToggleMouse').click();
+            });
+
+            document.getElementById('startOverlay').classList.remove('hidden');
+            requestAnimationFrame(renderLoop);
+        };
+    </script>
+</body>
+</html>
